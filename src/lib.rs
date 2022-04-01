@@ -94,10 +94,31 @@ impl Game {
             }
             if p.id == pid {
                 p.intel += intel_add;
-                p.invisible = false; 
+                p.invisible = false;
             }
         }
     }
 
-    pub fn main(&mut self) {}
+    pub fn strike(&mut self, pid: PlayerId) {
+
+    }
+    pub fn wait(&mut self, pid: PlayerId) {
+        
+    }
+    pub fn capture(&mut self, pid: PlayerId) {
+        
+    }
+    pub fn hide(&mut self, pid: PlayerId) {
+        
+    }
+    pub fn reveal(&mut self, pid: PlayerId) {
+        
+    }
+    pub fn invisible(&mut self, pid: PlayerId) {
+        
+    }
+    pub fn prepare(&mut self, pid: PlayerId) {
+        
+    }
+
 }

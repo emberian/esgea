@@ -12,3 +12,7 @@ path = "src/server.rs"
 [dependencies]
 petgraph = "0.6"
 actix-web = "4"
+actix-session = { version = "0.6", features = ["cookie-session"] }
+env_logger = "0.9"
+parking_lot = "0.12"
+rand = "0.8"

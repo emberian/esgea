@@ -5,7 +5,36 @@
         <title>E S G E A</title>
     </head>
     <body>
+        <button id="start">Start Game</button>
+
         <canvas id="gameboard"></canvas>
         <!-- todo: lobby. player perspective. game graph. -->
+        <div id="actions">
+            <button id="strike">Attack</button>
+            <button id="wait">Wait</button>
+            <button id="capture">Capture</button>
+            <button id="hide">Hide signals</button>
+            <button id="reveal">Reveal attacks</button>
+            <button id="invisible">Go invisible</button>
+            <button id="prepare">Prepare</button>
+        </div>
+        <script>
+            document.querySelectorAll("#actions button").forEach(btn =>
+            {
+                btn.addEventListener("click", ev => {
+                    fetch("/do_action", {
+                        method: "POST",
+                        body: btn.id,
+                        credentials: "include"
+                    } )
+                })
+            })
+            document.querySelector("#start").addEventListener("click", ev => {
+                fetch("/start_game", {
+                        method: "POST",
+                        credentials: "include"
+                    } )
+            })
+        </script>
     </body>
 </html>
