@@ -10,9 +10,11 @@ name = "esgead"
 path = "src/server.rs"
 
 [dependencies]
-petgraph = "0.6"
+petgraph = { version = "0.6", features = ["serde-1"] }
 actix-web = "4"
 actix-session = { version = "0.6", features = ["cookie-session"] }
 env_logger = "0.9"
 parking_lot = "0.12"
 rand = "0.8"
+serde = {version =  "1.0.136", features = ["derive" ]}
+serde_json = "*"

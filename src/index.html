@@ -1,40 +1,77 @@
 <!doctype html>
 
 <html>
-    <head>
-        <title>E S G E A</title>
-    </head>
-    <body>
-        <button id="start">Start Game</button>
 
-        <canvas id="gameboard"></canvas>
-        <!-- todo: lobby. player perspective. game graph. -->
-        <div id="actions">
-            <button id="strike">Attack</button>
-            <button id="wait">Wait</button>
-            <button id="capture">Capture</button>
-            <button id="hide">Hide signals</button>
-            <button id="reveal">Reveal attacks</button>
-            <button id="invisible">Go invisible</button>
-            <button id="prepare">Prepare</button>
-        </div>
-        <script>
-            document.querySelectorAll("#actions button").forEach(btn =>
-            {
-                btn.addEventListener("click", ev => {
-                    fetch("/do_action", {
-                        method: "POST",
-                        body: btn.id,
-                        credentials: "include"
-                    } )
+<head>
+    <title>E S G E A</title>
+</head>
+
+<body>
+    <button id="start">Start Game</button>
+    <button id="refresh">Refresh Lobby</button>
+
+    <canvas id="gameboard"></canvas>
+    <!-- todo: lobby. player perspective. game graph. -->
+    <div>Player Id: <span id="pid">not yet in a game</span></div>
+    <div id="actions">
+        <button id="strike">Attack</button>
+        <button id="wait">Wait</button>
+        <button id="capture">Capture</button>
+        <button id="hide">Hide signals</button>
+        <button id="reveal">Reveal attacks</button>
+        <button id="invisible">Go invisible</button>
+        <button id="prepare">Prepare</button>
+    </div>
+
+    Lobby
+    <ul id="lobby">
+
+    </ul>
+    <script>
+        window.pid = "not yet in game";
+        setInterval(() => { document.querySelector("#pid").textContent = window.pid; }, 300);
+        setInterval(() => { document.querySelector("#refresh").click(); }, 3000);
+
+        document.querySelectorAll("#actions button").forEach(btn => {
+            btn.addEventListener("click", ev => {
+                fetch(`/do_action?gid=${window.gid}&pid=${window.pid}`, {
+                    method: "POST",
+                    body: btn.id,
+                    credentials: "include"
                 })
             })
-            document.querySelector("#start").addEventListener("click", ev => {
-                fetch("/start_game", {
+        })
+        document.querySelector("#start").addEventListener("click", async ev => {
+            let res = await fetch("/start_game", {
+                method: "POST",
+                credentials: "include"
+            });
+            window.gid = await res.text();
+        })
+        document.querySelector("#refresh").addEventListener("click", async ev => {
+            let res = await fetch("/lobby", {
+                method: "GET",
+                credentials: "include"
+            });
+            let games = await res.json();
+            let pspsps = [];
+
+            let lobby = document.querySelector("#lobby");
+            lobby.replaceChildren();
+            for (gm of games) {
+                lobby.insertAdjacentHTML("beforeend", `<li><button gameid="${gm[1]}">Join</button>${gm[0].players.length} players</li>`)
+            }
+            document.querySelectorAll("#lobby button").forEach(btn => {
+                btn.addEventListener("click", async (ev) => {
+                    let res = await fetch(`/join_game/${btn.getAttribute("gameid")}`, {
                         method: "POST",
                         credentials: "include"
-                    } )
-            })
-        </script>
-    </body>
+                    });
+                    window.pid = await res.text();
+                });
+            });
+        });
+    </script>
+</body>
+
 </html>

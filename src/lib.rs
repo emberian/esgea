@@ -1,8 +1,10 @@
 use petgraph::graph::{NodeIndex, UnGraph};
+use serde::{Serialize, Deserialize};
 
 pub type Intel = u32;
 pub type PlayerId = usize;
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Location {
     /// On starting a turn with a pending powerup, the additional intel is income.
     pub pending_powerup: Option<Intel>,
@@ -17,7 +19,7 @@ pub struct Location {
     pub control: Option<PlayerId>,
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub intel: Intel,
     /// Cause intel-spending events to be vague to the enemy
@@ -36,6 +38,7 @@ pub struct Player {
     pub location: NodeIndex,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Game {
     pub cities: UnGraph<Location, ()>,
     pub players: Vec<Player>,
@@ -46,14 +49,6 @@ impl Game {
         Game {
             cities: UnGraph::new_undirected(),
             players: vec![
-                Player {
-                    id: 0,
-                    ..Default::default()
-                },
-                Player {
-                    id: 1,
-                    ..Default::default()
-                },
             ],
         }
     }
@@ -111,7 +106,7 @@ impl Game {
     pub fn hide(&mut self, pid: PlayerId) {
         
     }
-    pub fn reveal(&mut self, pid: PlayerId) {
+    pub fn reveal(&mut self, pid: PlayerId, loc: NodeIndex) {
         
     }
     pub fn invisible(&mut self, pid: PlayerId) {
