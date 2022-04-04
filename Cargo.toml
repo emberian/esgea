@@ -15,6 +15,7 @@ actix-web = "4"
 actix-session = { version = "0.6", features = ["cookie-session"] }
 env_logger = "0.9"
 parking_lot = "0.12"
+futures-util = "0.3"
 rand = "0.8"
 serde = {version =  "1.0.136", features = ["derive" ]}
 serde_json = "*"
