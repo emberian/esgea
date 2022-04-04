@@ -10,9 +10,11 @@ name = "esgead"
 path = "src/server.rs"
 
 [dependencies]
+actix = "*"
 petgraph = { version = "0.6", features = ["serde-1"] }
 actix-web = "4"
 actix-session = { version = "0.6", features = ["cookie-session"] }
+actix-web-actors = "*"
 env_logger = "0.9"
 parking_lot = "0.12"
 futures-util = "0.3"
