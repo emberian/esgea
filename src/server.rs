@@ -114,12 +114,12 @@ async fn do_action(
     let gm = state.lock().games.get(&gid).expect("no homie").clone();
     let mut gm = gm.lock();
     match body.as_ref() {
-        b"strike" => gm.strike(pid),
-        b"wait" => gm.wait(pid),
-        b"capture" => gm.capture(pid),
-        b"hide" => gm.hide(pid),
-        b"invisible" => gm.invisible(pid),
-        b"prepare" => gm.prepare(pid),
+        b"strike" => { gm.strike(pid); },
+        b"wait" => { gm.wait(pid); },
+        b"capture" => { gm.capture(pid); },
+        b"hide_signals" => { gm.hide_signals(pid); },
+        b"invisible" => { gm.invisible(pid); },
+        b"prepare" => { gm.prepare(pid); },
         _ => match body.as_ref().split(|c| b':' == *c).collect::<Vec<_>>()[..] {
             [b"move", to] => {
                 return HttpResponse::Ok().body(
@@ -135,15 +135,11 @@ async fn do_action(
                     .to_string(),
                 );
             }
-            [b"reveal", loc] => {
+            [b"reveal", who] => {
                 gm.reveal(
                     pid,
-                    NodeIndex::new(
-                        std::str::from_utf8(loc)
-                            .expect("utf8")
-                            .parse()
-                            .expect("bad location"),
-                    ),
+                    // TODO
+                    None,
                 );
             }
             _ => return HttpResponse::InternalServerError().body("no such action"),
