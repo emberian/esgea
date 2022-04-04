@@ -31,6 +31,7 @@
         window.pid = "not yet in game";
         setInterval(() => { document.querySelector("#pid").textContent = window.pid; }, 300);
         setInterval(() => { document.querySelector("#refresh").click(); }, 3000);
+        window.game_events = null;
 
         window.renderMap = async () => {
             let res = await fetch(`/render/${window.gid}/${window.pid}`, {
@@ -78,6 +79,11 @@
                     });
                     window.gid = btn.getAttribute("gameid");
                     window.pid = await res.text();
+                    console.log("pid: ", window.pid);
+                    window.game_events = new EventSource(`/events/${window.gid}/${window.pid}`);
+                    window.game_events.onmessage = (event) => {
+                      console.log(event);
+                    }
                 });
             });
         });
