@@ -48,6 +48,7 @@ pub struct Player {
 pub struct Game {
     pub cities: UnGraph<Location, ()>,
     pub players: Vec<Player>,
+    pub updates: Vec<Vec<ClientUpdate>>,
 }
 
 impl Game {
@@ -55,6 +56,7 @@ impl Game {
         Game {
             cities: UnGraph::new_undirected(),
             players: vec![],
+            updates: vec![],
         }
     }
 
@@ -67,6 +69,7 @@ impl Game {
             return false;
         }
         self.players[pid].location = to;
+        // TODO: active scan
         true
     }
 

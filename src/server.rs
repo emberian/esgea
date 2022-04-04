@@ -15,8 +15,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use tokio::process::Command;
 
+struct GameState {
+  game: Arc<Mutex<esgea::Game>>
+}
+
+impl GameState {
+  fn new() -> Self {
+    Self {
+      game: Arc::new(Mutex::new(esgea::Game::new()))
+    }
+  }
+}
+
 struct State {
-    games: BTreeMap<u128, Arc<Mutex<esgea::Game>>>,
+    games: BTreeMap<u128, GameState>,
 }
 
 #[get("/")]
@@ -33,7 +45,7 @@ async fn start_game(state: Data<Mutex<State>>) -> impl Responder {
     let mut st = state.lock();
     let gid: u128 = rand::random();
     st.games
-        .insert(gid, Arc::new(Mutex::new(esgea::Game::new())));
+        .insert(gid, GameState::new());
     HttpResponse::Ok()
         .append_header(ContentType::plaintext())
         .body(format!("{}", gid))
@@ -46,7 +58,7 @@ async fn list_games(state: Data<Mutex<State>>) -> impl Responder {
             .lock()
             .games
             .iter()
-            .map(|(gid, gm)| ((gm.lock().clone(), gid.to_string())))
+            .map(|(gid, gm)| ((gm.game.lock().clone(), gid.to_string())))
             .collect::<Vec<_>>(),
     )
 }
@@ -59,12 +71,13 @@ async fn join_game(state: Data<Mutex<State>>, path: web::Path<String>) -> impl R
     let gid: u128 = gid.parse().expect("sad gid");
     match st.games.get(&gid) {
         Some(gm) => {
-            let mut gm = gm.lock();
+            let mut gm = gm.game.lock();
             let last = gm.players.last().cloned().unwrap_or(Default::default());
             gm.players.push(esgea::Player {
                 id: last.id + 1,
                 ..last
             });
+            gm.updates.push(vec![]);
             HttpResponse::Ok()
                 .append_header(ContentType::plaintext())
                 .body(format!("{}", last.id + 1))
@@ -80,7 +93,7 @@ async fn render(state: Data<Mutex<State>>, path: web::Path<(String, String)>) ->
     let gid: u128 = gid.parse().expect("gid isnt u128");
     let pid: esgea::PlayerId = pid.parse().expect("pid isnt usize");
 
-    let graphviz_source = st.games.get(&gid).expect("no game?").lock().render(pid);
+    let graphviz_source = st.games.get(&gid).expect("no game?").game.lock().render(pid);
     let mut child = Command::new("dot")
         .arg("-Tsvg")
         .stdout(Stdio::piped())
@@ -101,6 +114,18 @@ async fn render(state: Data<Mutex<State>>, path: web::Path<(String, String)>) ->
         .body(svg)
 }
 
+fn distribute_updates(game: &mut esgea::Game, updates: Vec<(Option<esgea::PlayerId>, esgea::ClientUpdate)>) {
+  for (pid, upd) in updates {
+    if let Some(pid) = pid {
+      game.updates[pid].push(upd);
+    } else {
+      for pl in 0..game.updates.len() {
+        game.updates[pl].push(upd.clone());
+      }
+    }
+  }
+}
+
 #[post("/do_action/{gid}/{pid}")]
 async fn do_action(
     state: Data<Mutex<State>>,
@@ -111,10 +136,10 @@ async fn do_action(
     let gid: u128 = gid.parse().expect("gid isnt u128");
     let pid: esgea::PlayerId = pid.parse().expect("pid isnt usize");
 
-    let gm = state.lock().games.get(&gid).expect("no homie").clone();
+    let gm = state.lock().games.get(&gid).expect("no homie").game.clone();
     let mut gm = gm.lock();
     match body.as_ref() {
-        b"strike" => { gm.strike(pid); },
+        b"strike" => { let upds = gm.strike(pid); distribute_updates(&mut gm, upds) },
         b"wait" => { gm.wait(pid); },
         b"capture" => { gm.capture(pid); },
         b"hide_signals" => { gm.hide_signals(pid); },
