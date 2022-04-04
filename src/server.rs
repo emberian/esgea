@@ -9,7 +9,11 @@ use actix_web::{post, HttpMessage, HttpRequest};
 use parking_lot::Mutex;
 use petgraph::graph::NodeIndex;
 use std::collections::BTreeMap;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use tokio::process::Command;
 
 struct State {
     games: BTreeMap<u128, Arc<Mutex<esgea::Game>>>,
@@ -69,13 +73,41 @@ async fn join_game(state: Data<Mutex<State>>, path: web::Path<String>) -> impl R
     }
 }
 
-#[post("/do_action")]
+#[get("/render/{gid}/{pid}")]
+async fn render(state: Data<Mutex<State>>, path: web::Path<(String, String)>) -> impl Responder {
+    let st = state.lock();
+    let (gid, pid) = path.into_inner();
+    let gid: u128 = gid.parse().expect("gid isnt u128");
+    let pid: esgea::PlayerId = pid.parse().expect("pid isnt usize");
+
+    let graphviz_source = st.games.get(&gid).expect("no game?").lock().render(pid);
+    let mut child = Command::new("dot")
+        .arg("-Tsvg")
+        .stdout(Stdio::piped())
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("graphviz failed");
+    let mut stdin = child.stdin.take().unwrap();
+    stdin
+        .write_all(graphviz_source.as_bytes())
+        .await
+        .expect("writing");
+    drop(stdin);
+    let mut stdout = child.stdout.take().unwrap();
+    let mut svg = vec![];
+    stdout.read_to_end(&mut svg).await.expect("reading");
+    HttpResponse::Ok()
+        .append_header(ContentType::plaintext())
+        .body(svg)
+}
+
+#[post("/do_action/{gid}/{pid}")]
 async fn do_action(
     state: Data<Mutex<State>>,
-    gid: String,
-    pid: String,
+    path: web::Path<(String, String)>,
     body: Bytes,
 ) -> impl Responder {
+    let (gid, pid) = path.into_inner();
     let gid: u128 = gid.parse().expect("gid isnt u128");
     let pid: esgea::PlayerId = pid.parse().expect("pid isnt usize");
 
@@ -141,6 +173,7 @@ async fn main() -> std::io::Result<()> {
             .service(do_action)
             .service(list_games)
             .service(join_game)
+            .service(render)
             .service(start_game)
     })
     .bind(("127.0.0.1", 8080))?

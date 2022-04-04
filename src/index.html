@@ -10,7 +10,7 @@
     <button id="start">Start Game</button>
     <button id="refresh">Refresh Lobby</button>
 
-    <canvas id="gameboard"></canvas>
+    <div id="gameboard"></div>
     <!-- todo: lobby. player perspective. game graph. -->
     <div>Player Id: <span id="pid">not yet in a game</span></div>
     <div id="actions">
@@ -32,9 +32,18 @@
         setInterval(() => { document.querySelector("#pid").textContent = window.pid; }, 300);
         setInterval(() => { document.querySelector("#refresh").click(); }, 3000);
 
+        window.renderMap = async () => {
+            let res = await fetch(`/render/${window.gid}/${window.pid}`, {
+                    method: "GET",
+                    credentials: "include"
+                });
+            let gb = document.querySelector("#gameboard");
+            gb.replaceChildren();
+            gb.insertAdjacentHTML("afterbegin", await res.text());
+        }
         document.querySelectorAll("#actions button").forEach(btn => {
             btn.addEventListener("click", ev => {
-                fetch(`/do_action?gid=${window.gid}&pid=${window.pid}`, {
+                fetch(`/do_action/${window.gid}/${window.pid}`, {
                     method: "POST",
                     body: btn.id,
                     credentials: "include"
@@ -67,6 +76,7 @@
                         method: "POST",
                         credentials: "include"
                     });
+                    window.gid = btn.getAttribute("gameid");
                     window.pid = await res.text();
                 });
             });

@@ -1,8 +1,13 @@
-use petgraph::graph::{NodeIndex, UnGraph};
-use serde::{Serialize, Deserialize};
+use petgraph::{
+    graph::{NodeIndex, UnGraph},
+    visit::EdgeRef,
+};
+use serde::{Deserialize, Serialize};
 
 pub type Intel = u32;
 pub type PlayerId = usize;
+
+const COLORS: &[&str] = &["red", "blue", "green", "yellow"];
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Location {
@@ -48,8 +53,7 @@ impl Game {
     pub fn new() -> Game {
         Game {
             cities: UnGraph::new_undirected(),
-            players: vec![
-            ],
+            players: vec![],
         }
     }
 
@@ -94,26 +98,44 @@ impl Game {
         }
     }
 
-    pub fn strike(&mut self, pid: PlayerId) {
+    pub fn strike(&mut self, pid: PlayerId) {}
+    pub fn wait(&mut self, pid: PlayerId) {}
+    pub fn capture(&mut self, pid: PlayerId) {}
+    pub fn hide(&mut self, pid: PlayerId) {}
+    pub fn reveal(&mut self, pid: PlayerId, loc: NodeIndex) {}
+    pub fn invisible(&mut self, pid: PlayerId) {}
+    pub fn prepare(&mut self, pid: PlayerId) {}
 
-    }
-    pub fn wait(&mut self, pid: PlayerId) {
-        
-    }
-    pub fn capture(&mut self, pid: PlayerId) {
-        
-    }
-    pub fn hide(&mut self, pid: PlayerId) {
-        
-    }
-    pub fn reveal(&mut self, pid: PlayerId, loc: NodeIndex) {
-        
-    }
-    pub fn invisible(&mut self, pid: PlayerId) {
-        
-    }
-    pub fn prepare(&mut self, pid: PlayerId) {
-        
-    }
+    pub fn render(&self, perspective: PlayerId) -> String {
+        let mut d = vec![String::from("graph {")];
 
+        for location in self.cities.node_weights() {
+            let size = location.base_income as f32 * 0.25;
+            let color = match location.control {
+                Some(idx) => COLORS[idx],
+                None => "white",
+            };
+            let pending_powerup = location
+                .pending_powerup
+                .map(|x| x.to_string())
+                .unwrap_or(String::new());
+            let boost = if location.boost { "⚡" } else { "" };
+            d.push(format!(
+                "{} [ size={size} style=filled fillcolor={color} label={pending_powerup}{boost} ]",
+                location.index.index()
+            ))
+        }
+
+        for edge in self.cities.edge_references() {
+            d.push(format!(
+                "{} -- {};",
+                edge.source().index(),
+                edge.target().index()
+            ));
+        }
+
+        d.push(String::from("}"));
+
+        d.concat()
+    }
 }
