@@ -10,17 +10,17 @@ name = "esgead"
 path = "src/server.rs"
 
 [dependencies]
-actix = "*"
+actix = "0.13.0"
 petgraph = { version = "0.6", features = ["serde-1"] }
-actix-web = "4"
+actix-web = "4.3.1"
 actix-session = { version = "0.7", features = ["cookie-session"] }
-actix-web-actors = "*"
+actix-web-actors = "4.2.0"
 env_logger = "0.10"
 parking_lot = "0.12"
 futures-util = "0.3"
 rand = "0.8"
-serde = {version =  "1.0.136", features = ["derive" ]}
-serde_json = "*"
-tokio = { version = "*", features = ["process"] }
+serde = {version =  "1.0.164", features = ["derive" ]}
+serde_json = "1.0.96"
+tokio = { version = "1.28.2", features = ["process"] }
 ascent = "0.4"
 vecmap-rs = { version = "0.1.10", features = ["serde"] }
