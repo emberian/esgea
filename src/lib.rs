@@ -2,6 +2,7 @@ use petgraph::{
     graph::{NodeIndex, UnGraph},
     visit::EdgeRef,
 };
+use vecmap::{vecmap, VecMap};
 use serde::{Deserialize, Serialize};
 
 pub type Intel = u32;
@@ -32,7 +33,7 @@ pub struct Player {
     pub hidden_signals: bool,
     /// Enemy attack locations are visible.
     pub visible_violence: bool,
-    /// If you walk into an enemy during turn, you will reveal them if they are concealed.
+    /// When actively scanning, you will reveal any concealed players on locations you pass through.
     pub active_scan: bool,
     /// If concealed, the peg is not observed by the enemy.
     pub concealed: bool,
@@ -48,7 +49,7 @@ pub struct Player {
 pub struct Game {
     pub cities: UnGraph<Location, ()>,
     pub players: Vec<Player>,
-    pub updates: Vec<Vec<ClientUpdate>>,
+    pub updates: VecMap<PlayerId, Vec<Observation>>,
 }
 
 impl Game {
@@ -56,7 +57,7 @@ impl Game {
         Game {
             cities: UnGraph::new_undirected(),
             players: vec![],
-            updates: vec![],
+            updates: vecmap![],
         }
     }
 
@@ -79,7 +80,7 @@ impl Game {
             .cities
             .node_weight(self.players[pid].location)
             .expect("moved OOB");
-        let intel_add = self
+        let intel_income = self
             .cities
             .node_weights()
             .filter_map(|c| {
@@ -96,13 +97,14 @@ impl Game {
                 p.concealed = false; // TODO(N-player): visibility sets
             }
             if p.id == pid {
-                p.intel += intel_add;
+                p.intel += intel_income;
                 p.invisible = false;
             }
         }
     }
 
     pub fn render(&self, perspective: PlayerId) -> String {
+        // TODO: use `perspective` to conceal other players.
         let mut d = vec![String::from("graph {")];
 
         for location in self.cities.node_weights() {
@@ -137,7 +139,7 @@ impl Game {
     fn intel_reveal(
         &self,
         pid: PlayerId,
-        update_queue: &mut Vec<(Option<PlayerId>, ClientUpdate)>,
+        observations: &mut Vec<(Option<PlayerId>, Observation)>,
         intel_kind: IntelKind,
     ) {
         let kind = if self.players[pid].hidden_signals {
@@ -147,9 +149,9 @@ impl Game {
         };
         for pl in &self.players {
             if pl.id != pid {
-                update_queue.push((
+                observations.push((
                     Some(pl.id),
-                    ClientUpdate::Intel {
+                    Observation::Intel {
                         by: Some(pid),
                         kind,
                     },
@@ -158,19 +160,19 @@ impl Game {
         }
     }
 
-    pub fn strike(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    pub fn strike(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         let mut update_queue = Vec::new();
         for pl in 0..self.players.len() {
             if pl != pid {
                 if self.players[pid].location == self.players[pl].location {
                     self.players[pl].alive = false;
-                    update_queue.push((Some(pl), ClientUpdate::Death { by: pid, of: pl }));
-                    update_queue.push((Some(pid), ClientUpdate::Death { by: pid, of: pl }));
+                    update_queue.push((Some(pl), Observation::Death { by: pid, of: pl }));
+                    update_queue.push((Some(pid), Observation::Death { by: pid, of: pl }));
                 }
                 if self.players[pl].visible_violence || !self.players[pl].alive {
                     update_queue.push((
                         Some(pl),
-                        ClientUpdate::Strike {
+                        Observation::Strike {
                             by: Some(pid),
                             at: Some(self.players[pid].location),
                         },
@@ -178,7 +180,7 @@ impl Game {
                 } else {
                     update_queue.push((
                         Some(pl),
-                        ClientUpdate::Strike {
+                        Observation::Strike {
                             by: Some(pid),
                             at: None,
                         },
@@ -189,25 +191,25 @@ impl Game {
         update_queue
     }
 
-    pub fn wait(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
-        vec![(None, ClientUpdate::WaitMove { by: Some(pid) })]
+    pub fn wait(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
+        vec![(None, Observation::WaitMove { by: Some(pid) })]
     }
 
-    pub fn capture(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    pub fn capture(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         self.cities
             .node_weight_mut(self.players[pid].location)
             .unwrap()
             .control = Some(pid);
         vec![(
             None,
-            ClientUpdate::Capture {
+            Observation::Capture {
                 by: pid,
                 at: self.players[pid].location,
             },
         )]
     }
 
-    pub fn hide_signals(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    pub fn hide_signals(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         // TODO: spend intel
         // TODO: can't do this twice
         let mut update_queue = Vec::new();
@@ -220,20 +222,20 @@ impl Game {
         &mut self,
         pid: PlayerId,
         reveal: Option<PlayerId>,
-    ) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    ) -> Vec<(Option<PlayerId>, Observation)> {
         // TODO: spend intel
         let mut update_queue = Vec::new();
         if let Some(reveal) = reveal {
             if !self.players[reveal].invisible {
                 update_queue.push((
                     Some(pid),
-                    ClientUpdate::Reveal {
+                    Observation::Reveal {
                         who: reveal,
                         at: self.players[reveal].location,
                     },
                 ));
             } else {
-                update_queue.push((Some(pid), ClientUpdate::RevealFailure { who: reveal }));
+                update_queue.push((Some(pid), Observation::RevealFailure { who: reveal }));
             }
         } else {
             for reveal in &self.players {
@@ -241,14 +243,14 @@ impl Game {
                     if !reveal.invisible {
                         update_queue.push((
                             Some(pid),
-                            ClientUpdate::Reveal {
+                            Observation::Reveal {
                                 who: reveal.id,
                                 at: reveal.location,
                             },
                         ));
                     } else {
                         update_queue
-                            .push((Some(pid), ClientUpdate::RevealFailure { who: reveal.id }));
+                            .push((Some(pid), Observation::RevealFailure { who: reveal.id }));
                     }
                 }
             }
@@ -257,7 +259,7 @@ impl Game {
         update_queue
     }
 
-    pub fn invisible(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    pub fn invisible(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         // TODO: spend intel
         let mut update_queue = Vec::new();
         self.players[pid].invisible = true;
@@ -265,7 +267,7 @@ impl Game {
         update_queue
     }
 
-    pub fn prepare(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, ClientUpdate)> {
+    pub fn prepare(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         // TODO: spend intel
         let mut update_queue = Vec::new();
         // TODO
@@ -275,7 +277,7 @@ impl Game {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ClientUpdate {
+pub enum Observation {
     Death {
         by: PlayerId,
         of: PlayerId,

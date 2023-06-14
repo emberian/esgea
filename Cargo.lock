@@ -662,6 +662,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "vecmap-rs",
 ]
 
 [[package]]
@@ -1604,6 +1605,15 @@ dependencies = [
  "idna",
  "matches",
  "percent-encoding",
+]
+
+[[package]]
+name = "vecmap-rs"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfd18cb0279ed472822644fed8a86507fa8578241d4e047eddb3129591350cc0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

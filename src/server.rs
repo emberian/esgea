@@ -90,7 +90,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ReceiverStream {
     }
 }
 
-struct Upd(usize, esgea::ClientUpdate);
+struct Upd(usize, esgea::Observation);
 impl Message for Upd {
     type Result = ();
 }
@@ -147,7 +147,7 @@ async fn join_game(state: Data<Mutex<State>>, path: web::Path<String>) -> impl R
                 .unwrap_or(Default::default());
             println!("adding player to game {gid}: {new_player:?}");
             gm.players.push(new_player);
-            gm.updates.push(vec![]);
+            gm.updates.insert(new_player.id, vec![]);
             HttpResponse::Ok()
                 .append_header(ContentType::plaintext())
                 .body(format!("{}", new_player.id))
@@ -192,7 +192,7 @@ async fn render(state: Data<Mutex<State>>, path: web::Path<(String, String)>) ->
 
 async fn distribute_updates(
     gs: &mut GameState,
-    updates: Vec<(Option<esgea::PlayerId>, esgea::ClientUpdate)>,
+    updates: Vec<(Option<esgea::PlayerId>, esgea::Observation)>,
 ) {
     let mut game = gs.game.lock();
     for (pid, upd) in updates {
