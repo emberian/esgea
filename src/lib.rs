@@ -2,8 +2,8 @@ use petgraph::{
     graph::{NodeIndex, UnGraph},
     visit::EdgeRef,
 };
-use vecmap::{vecmap, VecMap};
 use serde::{Deserialize, Serialize};
+use vecmap::{VecMap};
 
 pub type Intel = u32;
 pub type PlayerId = usize;
@@ -49,7 +49,7 @@ pub struct Player {
 pub struct Game {
     pub cities: UnGraph<Location, ()>,
     pub players: Vec<Player>,
-    pub updates: VecMap<PlayerId, Vec<Observation>>,
+    pub event: Event,
 }
 
 impl Game {
@@ -57,10 +57,17 @@ impl Game {
         Game {
             cities: UnGraph::new_undirected(),
             players: vec![],
-            updates: vecmap![],
+            event: Event::default(),
         }
     }
 
+    fn note(&mut self, pid: PlayerId, obs: Observation) {
+        self.event.note(pid, obs)
+    }
+    fn broadcast(&mut self, obs: Observation) {
+        self.event.broadcast(obs)
+    }
+    /// Attempt a move, returning true if the move completed.
     pub fn try_move(&mut self, pid: PlayerId, to: NodeIndex) -> bool {
         if self
             .cities
@@ -70,7 +77,7 @@ impl Game {
             return false;
         }
         self.players[pid].location = to;
-        // TODO: active scan
+        if self.players[pid].active_scan {}
         true
     }
 
@@ -160,35 +167,34 @@ impl Game {
         }
     }
 
-    pub fn strike(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
-        let mut update_queue = Vec::new();
+    pub fn strike(&mut self, pid: PlayerId) {
         for pl in 0..self.players.len() {
             if pl != pid {
                 if self.players[pid].location == self.players[pl].location {
                     self.players[pl].alive = false;
-                    update_queue.push((Some(pl), Observation::Death { by: pid, of: pl }));
-                    update_queue.push((Some(pid), Observation::Death { by: pid, of: pl }));
+                    let ded = Observation::Death { by: pid, of: pl };
+                    self.note(pid, ded);
+                    self.note(pl, ded);
                 }
                 if self.players[pl].visible_violence || !self.players[pl].alive {
-                    update_queue.push((
-                        Some(pl),
+                    self.note(
+                        pl,
                         Observation::Strike {
                             by: Some(pid),
                             at: Some(self.players[pid].location),
                         },
-                    ));
+                    );
                 } else {
-                    update_queue.push((
-                        Some(pl),
+                    self.note(
+                        pl,
                         Observation::Strike {
                             by: Some(pid),
                             at: None,
                         },
-                    ));
+                    );
                 }
             }
         }
-        update_queue
     }
 
     pub fn wait(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
@@ -218,7 +224,7 @@ impl Game {
         update_queue
     }
 
-    pub fn reveal(
+    pub fn reveal_action(
         &mut self,
         pid: PlayerId,
         reveal: Option<PlayerId>,
@@ -276,7 +282,8 @@ impl Game {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+/// Subjective information about changes to the game state.
 pub enum Observation {
     Death {
         by: PlayerId,
@@ -304,6 +311,26 @@ pub enum Observation {
     RevealFailure {
         who: PlayerId,
     },
+}
+
+/// An Event records the observations that occur between successive game states.
+///
+/// These are used by the server to inform players about the new state of the game,
+/// without sending information that would let them cheat (hopefully!)
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Event {
+    pub private_observations: VecMap<PlayerId, Vec<Observation>>,
+    pub public_observations: Vec<Observation>,
+}
+
+impl Event {
+    pub fn note(&mut self, pid: PlayerId, obs: Observation) {
+        self.private_observations.entry(pid).or_default().push(obs);
+    }
+
+    pub fn broadcast(&mut self, obs: Observation) {
+        self.public_observations.push(obs);
+    }
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]

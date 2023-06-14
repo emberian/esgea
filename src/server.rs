@@ -6,7 +6,7 @@ use actix_web::{
     get, http::header::ContentType, middleware::Logger, web, App, HttpResponse, HttpServer,
     Responder,
 };
-use actix_web::{http::header, post};
+use actix_web::{post};
 use actix_web::{Error, HttpRequest};
 use actix_web_actors::ws;
 use parking_lot::Mutex;
@@ -15,7 +15,6 @@ use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc::{Receiver, Sender};
 
 use tokio::process::Command;
 
@@ -29,6 +28,34 @@ impl GameState {
         Self {
             game: Arc::new(Mutex::new(esgea::Game::new())),
             pid_channels: vec![],
+        }
+    }
+
+    async fn distribute_updates(&mut self) {
+        let game = self.game.lock();
+        for (&pid, upds) in &game.event.private_observations {
+            if let Some(tx) = &self.pid_channels[pid] {
+                let result = tx.send(TurnUpdate(upds.clone())).await;
+                if let Err(eeeeee) = result {
+                    println!("{} sending to {}, dropping delivery", eeeeee, pid);
+                    self.pid_channels[pid] = None;
+                }
+            } else {
+                println!("no active event stream for {pid} -- cannot send {upds:?}");
+            }
+        }
+        for pl in 0..game.players.len() {
+            if let Some(tx) = &self.pid_channels[pl] {
+                let result = tx
+                    .send(TurnUpdate(game.event.public_observations.clone()))
+                    .await;
+                if let Err(eeeeee) = result {
+                    println!("{} sending to {}, dropping delivery", eeeeee, pl);
+                    self.pid_channels[pl] = None;
+                }
+            } else {
+                println!("no active event stream for {pl} -- cannot send public observations");
+            }
         }
     }
 }
@@ -90,15 +117,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ReceiverStream {
     }
 }
 
-struct Upd(usize, esgea::Observation);
-impl Message for Upd {
+struct TurnUpdate(Vec<esgea::Observation>);
+impl Message for TurnUpdate {
     type Result = ();
 }
 
-impl Handler<Upd> for ReceiverStream {
+impl Handler<TurnUpdate> for ReceiverStream {
     type Result = ();
-    fn handle(&mut self, msg: Upd, ctx: &mut Self::Context) {
-        ctx.text(serde_json::to_string(&(msg.0, msg.1)).expect("jsonify reactor supercritical"))
+    fn handle(&mut self, msg: TurnUpdate, ctx: &mut Self::Context) {
+        ctx.text(serde_json::to_string(&(msg.0)).expect("jsonify reactor supercritical"))
     }
 }
 
@@ -147,7 +174,7 @@ async fn join_game(state: Data<Mutex<State>>, path: web::Path<String>) -> impl R
                 .unwrap_or(Default::default());
             println!("adding player to game {gid}: {new_player:?}");
             gm.players.push(new_player);
-            gm.updates.insert(new_player.id, vec![]);
+            gm.event.private_observations.insert(new_player.id, vec![]);
             HttpResponse::Ok()
                 .append_header(ContentType::plaintext())
                 .body(format!("{}", new_player.id))
@@ -190,41 +217,6 @@ async fn render(state: Data<Mutex<State>>, path: web::Path<(String, String)>) ->
         .body(svg)
 }
 
-async fn distribute_updates(
-    gs: &mut GameState,
-    updates: Vec<(Option<esgea::PlayerId>, esgea::Observation)>,
-) {
-    let mut game = gs.game.lock();
-    for (pid, upd) in updates {
-        if let Some(pid) = pid {
-            let seqno = game.updates[pid].len();
-            game.updates[pid].push(upd.clone());
-            if let Some(tx) = &gs.pid_channels[pid] {
-                let result = tx.send(Upd(seqno, upd)).await;
-                if let Err(eeeeee) = result {
-                    println!("{} sending to {}, dropping delivery", eeeeee, pid);
-                    gs.pid_channels[pid] = None;
-                }
-            } else {
-                println!("no active event stream for {pid} -- cannot send {upd:?}");
-            }
-        } else {
-            for pl in 0..game.updates.len() {
-                let seqno = game.updates[pl].len();
-                game.updates[pl].push(upd.clone());
-                if let Some(tx) = &gs.pid_channels[pl] {
-                    let result = tx.send(Upd(seqno, upd.clone())).await;
-                    if let Err(_) = result {
-                        gs.pid_channels[pl] = None;
-                    }
-                } else {
-                    println!("no active event stream for {pl} -- cannot send {upd:?}");
-                }
-            }
-        }
-    }
-}
-
 #[post("/do_action/{gid}/{pid}")]
 async fn do_action(
     state: Data<Mutex<State>>,
@@ -236,31 +228,25 @@ async fn do_action(
     let pid: esgea::PlayerId = pid.parse().expect("pid isnt usize");
 
     let mut guard = state.lock();
-    let mut gs = guard.games.get_mut(&gid).expect("no homie");
+    let gs = guard.games.get_mut(&gid).expect("no homie");
     match body.as_ref() {
         b"strike" => {
-            let upds = gs.game.lock().strike(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().strike(pid);
         }
         b"wait" => {
-            let upds = gs.game.lock().wait(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().wait(pid);
         }
         b"capture" => {
-            let upds = gs.game.lock().capture(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().capture(pid);
         }
         b"hide_signals" => {
-            let upds = gs.game.lock().hide_signals(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().hide_signals(pid);
         }
         b"invisible" => {
-            let upds = gs.game.lock().invisible(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().invisible(pid);
         }
         b"prepare" => {
-            let upds = gs.game.lock().prepare(pid);
-            distribute_updates(&mut gs, upds).await
+            gs.game.lock().prepare(pid);
         }
         _ => match body.as_ref().split(|c| b':' == *c).collect::<Vec<_>>()[..] {
             [b"move", to] => {
@@ -281,7 +267,7 @@ async fn do_action(
                 );
             }
             [b"reveal", who] => {
-                gs.game.lock().reveal(
+                gs.game.lock().reveal_action(
                     pid, // TODO
                     None,
                 );
@@ -289,6 +275,7 @@ async fn do_action(
             _ => return HttpResponse::InternalServerError().body("no such action"),
         },
     }
+    gs.distribute_updates().await;
     HttpResponse::Ok().body(())
 }
 
