@@ -10,6 +10,12 @@ pub type PlayerId = usize;
 
 const COLORS: &[&str] = &["red", "blue", "green", "yellow"];
 
+pub enum GameError {
+    NotEnoughIntel,
+    WouldNoop,
+}
+
+pub type GameResult = Result<(), GameError>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
     /// On starting a turn with a pending powerup, the additional intel is income.
@@ -45,6 +51,15 @@ pub struct Player {
     pub location: NodeIndex,
 }
 
+impl Player {
+    fn purchase(&mut self, which: IntelKind) -> GameResult {
+        if which.cost() > self.intel { 
+            return Err(GameError::NotEnoughIntel)
+        }
+        self.intel = self.intel.saturating_sub(which.cost());
+        Ok(())
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Game {
     pub cities: UnGraph<Location, ()>,
@@ -143,10 +158,10 @@ impl Game {
         d.concat()
     }
 
+    /// Broadcast some intel unless signals are hidden
     fn intel_reveal(
-        &self,
+        &mut self,
         pid: PlayerId,
-        observations: &mut Vec<(Option<PlayerId>, Observation)>,
         intel_kind: IntelKind,
     ) {
         let kind = if self.players[pid].hidden_signals {
@@ -154,17 +169,7 @@ impl Game {
         } else {
             Some(intel_kind)
         };
-        for pl in &self.players {
-            if pl.id != pid {
-                observations.push((
-                    Some(pl.id),
-                    Observation::Intel {
-                        by: Some(pid),
-                        kind,
-                    },
-                ));
-            }
-        }
+        self.broadcast(Observation::Intel { by: Some(pid), kind });
     }
 
     pub fn strike(&mut self, pid: PlayerId) {
@@ -197,10 +202,11 @@ impl Game {
         }
     }
 
-    pub fn wait(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
-        vec![(None, Observation::WaitMove { by: Some(pid) })]
+    pub fn wait(&mut self, pid: PlayerId)  {
+        self.broadcast(Observation::WaitMove { by: Some(pid) });
     }
 
+    /// Try to capture the location for yourself.
     pub fn capture(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
         self.cities
             .node_weight_mut(self.players[pid].location)
@@ -215,70 +221,74 @@ impl Game {
         )]
     }
 
-    pub fn hide_signals(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
-        // TODO: spend intel
-        // TODO: can't do this twice
-        let mut update_queue = Vec::new();
-        self.intel_reveal(pid, &mut update_queue, IntelKind::HideSignals);
+    /// Hide your intel emissions.
+    pub fn hide_signals(&mut self, pid: PlayerId) -> GameResult {
+        if self.players[pid].hidden_signals {
+            return Err(GameError::WouldNoop)
+        }
+        self.players[pid].purchase(IntelKind::HideSignals)?;
+        self.intel_reveal(pid, IntelKind::HideSignals);
         self.players[pid].hidden_signals = true;
-        update_queue
+        Ok(())
     }
 
+    /// Attempt to become invisible.
+    pub fn invisible_action(&mut self, pid: PlayerId) -> GameResult {
+        if self.players[pid].invisible {
+            return Err(GameError::WouldNoop)
+        }
+        self.players[pid].purchase(IntelKind::Invisible)?;
+        self.intel_reveal(pid, IntelKind::Invisible);
+        self.players[pid].invisible = true;
+        Ok(())
+    }
+
+
+    /// Attempt to reveal the existence - of either anyone where you are, or a particular player!
     pub fn reveal_action(
         &mut self,
         pid: PlayerId,
         reveal: Option<PlayerId>,
-    ) -> Vec<(Option<PlayerId>, Observation)> {
-        // TODO: spend intel
-        let mut update_queue = Vec::new();
+    ) -> GameResult {
+        self.players[pid].purchase(IntelKind::Reveal)?;
         if let Some(reveal) = reveal {
             if !self.players[reveal].invisible {
-                update_queue.push((
-                    Some(pid),
+                self.note( pid,
                     Observation::Reveal {
                         who: reveal,
                         at: self.players[reveal].location,
-                    },
-                ));
+                    }
+                );
             } else {
-                update_queue.push((Some(pid), Observation::RevealFailure { who: reveal }));
+                self.note(pid, Observation::RevealFailure { who: reveal });
             }
         } else {
+            let mut reveals = vec![];
             for reveal in &self.players {
                 if reveal.id != pid {
-                    if !reveal.invisible {
-                        update_queue.push((
-                            Some(pid),
+                    if !reveal.invisible && reveal.location == self.players[pid].location {
+
+                        reveals.push(
                             Observation::Reveal {
                                 who: reveal.id,
                                 at: reveal.location,
-                            },
-                        ));
+                            }
+                        );
                     } else {
-                        update_queue
-                            .push((Some(pid), Observation::RevealFailure { who: reveal.id }));
+                        reveals.push(Observation::RevealFailure { who: reveal.id });
                     }
                 }
             }
+            for reveal in reveals {
+                self.note(pid, reveal);
+            }
         }
-        self.intel_reveal(pid, &mut update_queue, IntelKind::HideSignals);
-        update_queue
+        self.intel_reveal(pid, IntelKind::Reveal);
+        Ok(())
     }
 
-    pub fn invisible(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
-        // TODO: spend intel
-        let mut update_queue = Vec::new();
-        self.players[pid].invisible = true;
-        self.intel_reveal(pid, &mut update_queue, IntelKind::Invisible);
-        update_queue
-    }
-
-    pub fn prepare(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
-        // TODO: spend intel
-        let mut update_queue = Vec::new();
-        // TODO
-        self.intel_reveal(pid, &mut update_queue, IntelKind::Prepare);
-        update_queue
+    pub fn prepare(&mut self, pid: PlayerId) {
+        self.intel_reveal(pid, IntelKind::Prepare);
     }
 }
 
@@ -339,4 +349,15 @@ pub enum IntelKind {
     Reveal,
     Invisible,
     Prepare,
+}
+
+impl IntelKind {
+    fn cost(&self) -> u32 {
+        match self {
+            IntelKind::HideSignals => 2,
+            IntelKind::Reveal => 1,
+            IntelKind::Invisible => 2,
+            IntelKind::Prepare => 0,
+        }
+    }
 }

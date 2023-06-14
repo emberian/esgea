@@ -243,7 +243,7 @@ async fn do_action(
             gs.game.lock().hide_signals(pid);
         }
         b"invisible" => {
-            gs.game.lock().invisible(pid);
+            gs.game.lock().invisible_action(pid);
         }
         b"prepare" => {
             gs.game.lock().prepare(pid);
