@@ -9,8 +9,8 @@ use actix_web::{
 use actix_web::{post};
 use actix_web::{Error, HttpRequest};
 use actix_web_actors::ws;
+use esgea::Observation;
 use parking_lot::Mutex;
-use petgraph::graph::NodeIndex;
 use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -117,7 +117,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ReceiverStream {
     }
 }
 
-struct TurnUpdate(Vec<esgea::Observation>);
+struct TurnUpdate(Vec<Observation>);
 impl Message for TurnUpdate {
     type Result = ();
 }
