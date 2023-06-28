@@ -76,12 +76,34 @@ impl Game {
         }
     }
 
+    pub fn reset_event(&mut self) {
+        self.event = Event::default();
+    }
+
+    pub fn do_action(&mut self, pid: PlayerId, action: Action) -> GameResult {
+        match action {
+            Action::Strike => self.strike(pid),
+            Action::Wait => self.wait(pid),
+            Action::Capture => self.capture(pid),
+            Action::HideSignals => self.hide_signals(pid)?,
+            Action::Invisible => self.invisible_action(pid)?,
+            Action::Prepare => self.prepare(pid),
+            Action::Move(to) => { self.try_move(pid, to); },
+            Action::Reveal(other) => self.reveal_action(pid, Some(other))?,
+        }
+        Ok(())
+    }
+
+    /// A private note for a player to know.
     fn note(&mut self, pid: PlayerId, obs: Observation) {
         self.event.note(pid, obs)
     }
+
+    /// Public information for everyone to learn.
     fn broadcast(&mut self, obs: Observation) {
         self.event.broadcast(obs)
     }
+
     /// Attempt a move, returning true if the move completed.
     pub fn try_move(&mut self, pid: PlayerId, to: NodeIndex) -> bool {
         if self
@@ -92,7 +114,17 @@ impl Game {
             return false;
         }
         self.players[pid].location = to;
-        if self.players[pid].active_scan {}
+        let mut obs = vec!();
+        if self.players[pid].active_scan {
+            for pl in &self.players {
+                if to == pl.location && pl.id != pid && !pl.invisible {
+                    obs.push(Observation::Reveal { who: pl.id, at: pl.location });
+                }
+            }
+        }
+        for obs in obs {
+            self.note(pid, obs);
+        }
         true
     }
 
@@ -116,11 +148,12 @@ impl Game {
             + cur_city.pending_powerup.unwrap_or(0);
         for p in &mut self.players {
             if p.id != pid && !p.invisible && cur_city.index == p.location {
-                p.concealed = false; // TODO(N-player): visibility sets
+                p.concealed = false; // TODO: N-player, make this a set?
+                self.event.note(pid, Observation::Reveal { who: p.id, at: p.location })
             }
             if p.id == pid {
                 p.intel += intel_income;
-                p.invisible = false;
+                p.invisible = false; // invisibility expires, sadly!
             }
         }
     }
@@ -207,18 +240,17 @@ impl Game {
     }
 
     /// Try to capture the location for yourself.
-    pub fn capture(&mut self, pid: PlayerId) -> Vec<(Option<PlayerId>, Observation)> {
+    pub fn capture(&mut self, pid: PlayerId) {
         self.cities
             .node_weight_mut(self.players[pid].location)
             .unwrap()
             .control = Some(pid);
-        vec![(
-            None,
+        self.broadcast(
             Observation::Capture {
                 by: pid,
                 at: self.players[pid].location,
-            },
-        )]
+            }
+        );
     }
 
     /// Hide your intel emissions.
@@ -360,4 +392,10 @@ impl IntelKind {
             IntelKind::Prepare => 0,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A player's action for a turn.
+pub enum Action {
+    Strike, Wait, Capture, HideSignals, Invisible, Prepare, Move(NodeIndex), Reveal(PlayerId),
 }
