@@ -229,51 +229,9 @@ async fn do_action(
 
     let mut guard = state.lock();
     let gs = guard.games.get_mut(&gid).expect("no homie");
-    match body.as_ref() {
-        b"strike" => {
-            gs.game.lock().strike(pid);
-        }
-        b"wait" => {
-            gs.game.lock().wait(pid);
-        }
-        b"capture" => {
-            gs.game.lock().capture(pid);
-        }
-        b"hide_signals" => {
-            gs.game.lock().hide_signals(pid);
-        }
-        b"invisible" => {
-            gs.game.lock().invisible_action(pid);
-        }
-        b"prepare" => {
-            gs.game.lock().prepare(pid);
-        }
-        _ => match body.as_ref().split(|c| b':' == *c).collect::<Vec<_>>()[..] {
-            [b"move", to] => {
-                return HttpResponse::Ok().body(
-                    // TODO: fix try_move to give events
-                    gs.game
-                        .lock()
-                        .try_move(
-                            pid,
-                            NodeIndex::new(
-                                std::str::from_utf8(to)
-                                    .expect("utf8")
-                                    .parse()
-                                    .expect("bad location"),
-                            ),
-                        )
-                        .to_string(),
-                );
-            }
-            [b"reveal", who] => {
-                gs.game.lock().reveal_action(
-                    pid, // TODO
-                    None,
-                );
-            }
-            _ => return HttpResponse::InternalServerError().body("no such action"),
-        },
+    let action = serde_json::from_slice::<esgea::Action>(body.as_ref()).expect("no such action");
+    if let Err(e) = gs.game.lock().do_action(pid, action) {
+        return HttpResponse::BadRequest().body(format!("{:?}", e));
     }
     gs.distribute_updates().await;
     HttpResponse::Ok().body(())

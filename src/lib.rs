@@ -10,8 +10,10 @@ pub type PlayerId = usize;
 
 const COLORS: &[&str] = &["red", "blue", "green", "yellow"];
 
+#[derive(Debug)]
 pub enum GameError {
     NotEnoughIntel,
+    NotYourTurn,
     WouldNoop,
 }
 
