@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESGEA – WASM Demo</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      button {
+        background: #1e40af;
+        border: none;
+        color: #e2e8f0;
+        padding: 0.5rem 1rem;
+        margin: 0.25rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #1d4ed8;
+      }
+      #gameboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+      .location {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 0.5rem;
+        padding: 1rem;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      select {
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: 0.375rem;
+        padding: 0.25rem 0.5rem;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      li {
+        margin-bottom: 0.5rem;
+      }
+      .status {
+        margin: 1rem 0;
+        font-weight: 600;
+      }
+      footer {
+        margin-top: 3rem;
+        font-size: 0.875rem;
+        color: #94a3b8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ESGEA – WebAssembly Demo</h1>
+    <p>
+      This build runs entirely in your browser. Use the controls below to explore a
+      simplified version of the ESGEA mechanics without a dedicated server.
+    </p>
+
+    <div class="controls">
+      <button id="reset">Restart demo</button>
+      <button id="end_turn">End turn</button>
+      <span class="status">Active player: <span id="pid"></span></span>
+    </div>
+
+    <section>
+      <h2>Map</h2>
+      <div id="gameboard"></div>
+    </section>
+
+    <section>
+      <h2>Actions</h2>
+      <div class="controls">
+        <button id="strike">Strike</button>
+        <button id="wait">Wait</button>
+        <button id="capture">Capture</button>
+        <button id="hide_signals">Hide signals</button>
+        <button id="invisible">Go invisible</button>
+        <button id="prepare">Prepare</button>
+        <button id="reveal_btn">Reveal</button>
+        <label>
+          Move target
+          <select id="move_target"></select>
+        </label>
+        <button id="move">Move</button>
+        <label>
+          Reveal target
+          <select id="reveal_target"></select>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Players</h2>
+      <ul id="players"></ul>
+    </section>
+
+    <section>
+      <h2>Recent events</h2>
+      <ul id="log"></ul>
+    </section>
+
+    <footer>
+      Built with <code>wasm-bindgen</code> and deployed automatically to GitHub Pages.
+    </footer>
+
+    <script type="module">
+      import init from "./pkg/esgea_wasm.js";
+
+      init().catch((err) => {
+        console.error("Failed to initialise ESGEA demo", err);
+      });
+    </script>
+  </body>
+</html>
