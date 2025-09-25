@@ -133,7 +133,7 @@ impl Game {
                     return Err(GameError::WouldNoop);
                 }
             }
-            Action::Reveal(other) => self.reveal_action(pid, Some(other))?,
+            Action::Reveal(target) => self.reveal_action(pid, target)?,
         }
         Ok(())
     }
@@ -478,5 +478,78 @@ pub enum Action {
     Invisible,
     Prepare,
     Move(NodeIndex),
-    Reveal(PlayerId),
+    Reveal(Option<PlayerId>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn demo_game() -> (Game, NodeIndex, NodeIndex) {
+        let mut game = Game::new();
+        let a = game.add_location("Alpha", 2);
+        let b = game.add_location("Bravo", 1);
+        game.connect_locations(a, b);
+        (game, a, b)
+    }
+
+    #[test]
+    fn start_turn_grants_income() {
+        let (mut game, a, _) = demo_game();
+        let player = game.spawn_player(a);
+        if let Some(loc) = game.cities.node_weight_mut(a) {
+            loc.control = Some(player);
+            loc.pending_powerup = Some(3);
+        }
+
+        game.start_turn(player);
+
+        assert_eq!(game.players[player].intel, 5);
+        assert!(game
+            .cities
+            .node_weight(a)
+            .unwrap()
+            .pending_powerup
+            .is_some());
+    }
+
+    #[test]
+    fn try_move_rejects_disconnected_nodes() {
+        let (mut game, a, b) = demo_game();
+        let c = game.add_location("Charlie", 1);
+        let player = game.spawn_player(a);
+        assert!(game.try_move(player, b));
+        assert!(!game.try_move(player, c));
+    }
+
+    #[test]
+    fn reveal_respects_invisibility() {
+        let (mut game, a, b) = demo_game();
+        let spy = game.spawn_player(a);
+        let observer = game.spawn_player(b);
+        game.players[spy].invisible = true;
+        game.players[spy].intel = 10;
+        game.players[observer].intel = 10;
+
+        // Observer attempts reveal of invisible spy, should receive failure observation.
+        game.reveal_action(observer, Some(spy)).unwrap();
+        let private = game
+            .event
+            .private_observations
+            .get(&observer)
+            .cloned()
+            .unwrap_or_default();
+        assert!(matches!(private.last(), Some(Observation::RevealFailure { who }) if *who == spy));
+
+        game.reset_event();
+        game.players[spy].invisible = false;
+        game.reveal_action(observer, Some(spy)).unwrap();
+        let private = game
+            .event
+            .private_observations
+            .get(&observer)
+            .cloned()
+            .unwrap_or_default();
+        assert!(matches!(private.last(), Some(Observation::Reveal { who, .. }) if *who == spy));
+    }
 }
