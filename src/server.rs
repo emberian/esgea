@@ -1,12 +1,12 @@
 use actix::prelude::*;
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
+use actix_web::post;
 use actix_web::web::{Bytes, Data};
 use actix_web::{
     get, http::header::ContentType, middleware::Logger, web, App, HttpResponse, HttpServer,
     Responder,
 };
-use actix_web::{post};
 use actix_web::{Error, HttpRequest};
 use actix_web_actors::ws;
 use esgea::Observation;

@@ -1,9 +1,7 @@
-use petgraph::{
-    graph::{NodeIndex, UnGraph},
-    visit::EdgeRef,
-};
+pub use petgraph::graph::NodeIndex;
+use petgraph::{graph::UnGraph, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
-use vecmap::{VecMap};
+use vecmap::VecMap;
 
 pub type Intel = u32;
 pub type PlayerId = usize;
@@ -55,8 +53,8 @@ pub struct Player {
 
 impl Player {
     fn purchase(&mut self, which: IntelKind) -> GameResult {
-        if which.cost() > self.intel { 
-            return Err(GameError::NotEnoughIntel)
+        if which.cost() > self.intel {
+            return Err(GameError::NotEnoughIntel);
         }
         self.intel = self.intel.saturating_sub(which.cost());
         Ok(())
@@ -78,6 +76,46 @@ impl Game {
         }
     }
 
+    pub fn add_location(&mut self, name: impl Into<String>, base_income: Intel) -> NodeIndex {
+        let index = self.cities.add_node(Location {
+            pending_powerup: None,
+            boost: false,
+            base_income,
+            name: name.into(),
+            index: NodeIndex::new(0),
+            control: None,
+        });
+        if let Some(location) = self.cities.node_weight_mut(index) {
+            location.index = index;
+        }
+        index
+    }
+
+    pub fn connect_locations(&mut self, a: NodeIndex, b: NodeIndex) {
+        if self.cities.find_edge(a, b).is_none() {
+            self.cities.add_edge(a, b, ());
+        }
+    }
+
+    pub fn spawn_player(&mut self, start_at: NodeIndex) -> PlayerId {
+        let id = self.players.len();
+        let mut player = Player::default();
+        player.alive = true;
+        player.id = id;
+        player.location = start_at;
+        self.players.push(player);
+        self.event.private_observations.entry(id).or_default();
+        id
+    }
+
+    pub fn neighbors(&self, index: NodeIndex) -> Vec<NodeIndex> {
+        self.cities.neighbors(index).collect::<Vec<_>>()
+    }
+
+    pub fn locations(&self) -> Vec<Location> {
+        self.cities.node_weights().cloned().collect()
+    }
+
     pub fn reset_event(&mut self) {
         self.event = Event::default();
     }
@@ -90,7 +128,11 @@ impl Game {
             Action::HideSignals => self.hide_signals(pid)?,
             Action::Invisible => self.invisible_action(pid)?,
             Action::Prepare => self.prepare(pid),
-            Action::Move(to) => { self.try_move(pid, to); },
+            Action::Move(to) => {
+                if !self.try_move(pid, to) {
+                    return Err(GameError::WouldNoop);
+                }
+            }
             Action::Reveal(other) => self.reveal_action(pid, Some(other))?,
         }
         Ok(())
@@ -116,11 +158,14 @@ impl Game {
             return false;
         }
         self.players[pid].location = to;
-        let mut obs = vec!();
+        let mut obs = vec![];
         if self.players[pid].active_scan {
             for pl in &self.players {
                 if to == pl.location && pl.id != pid && !pl.invisible {
-                    obs.push(Observation::Reveal { who: pl.id, at: pl.location });
+                    obs.push(Observation::Reveal {
+                        who: pl.id,
+                        at: pl.location,
+                    });
                 }
             }
         }
@@ -151,7 +196,13 @@ impl Game {
         for p in &mut self.players {
             if p.id != pid && !p.invisible && cur_city.index == p.location {
                 p.concealed = false; // TODO: N-player, make this a set?
-                self.event.note(pid, Observation::Reveal { who: p.id, at: p.location })
+                self.event.note(
+                    pid,
+                    Observation::Reveal {
+                        who: p.id,
+                        at: p.location,
+                    },
+                )
             }
             if p.id == pid {
                 p.intel += intel_income;
@@ -160,7 +211,7 @@ impl Game {
         }
     }
 
-    pub fn render(&self, perspective: PlayerId) -> String {
+    pub fn render(&self, _perspective: PlayerId) -> String {
         // TODO: use `perspective` to conceal other players.
         let mut d = vec![String::from("graph {")];
 
@@ -194,17 +245,16 @@ impl Game {
     }
 
     /// Broadcast some intel unless signals are hidden
-    fn intel_reveal(
-        &mut self,
-        pid: PlayerId,
-        intel_kind: IntelKind,
-    ) {
+    fn intel_reveal(&mut self, pid: PlayerId, intel_kind: IntelKind) {
         let kind = if self.players[pid].hidden_signals {
             None
         } else {
             Some(intel_kind)
         };
-        self.broadcast(Observation::Intel { by: Some(pid), kind });
+        self.broadcast(Observation::Intel {
+            by: Some(pid),
+            kind,
+        });
     }
 
     pub fn strike(&mut self, pid: PlayerId) {
@@ -237,7 +287,7 @@ impl Game {
         }
     }
 
-    pub fn wait(&mut self, pid: PlayerId)  {
+    pub fn wait(&mut self, pid: PlayerId) {
         self.broadcast(Observation::WaitMove { by: Some(pid) });
     }
 
@@ -247,18 +297,16 @@ impl Game {
             .node_weight_mut(self.players[pid].location)
             .unwrap()
             .control = Some(pid);
-        self.broadcast(
-            Observation::Capture {
-                by: pid,
-                at: self.players[pid].location,
-            }
-        );
+        self.broadcast(Observation::Capture {
+            by: pid,
+            at: self.players[pid].location,
+        });
     }
 
     /// Hide your intel emissions.
     pub fn hide_signals(&mut self, pid: PlayerId) -> GameResult {
         if self.players[pid].hidden_signals {
-            return Err(GameError::WouldNoop)
+            return Err(GameError::WouldNoop);
         }
         self.players[pid].purchase(IntelKind::HideSignals)?;
         self.intel_reveal(pid, IntelKind::HideSignals);
@@ -269,7 +317,7 @@ impl Game {
     /// Attempt to become invisible.
     pub fn invisible_action(&mut self, pid: PlayerId) -> GameResult {
         if self.players[pid].invisible {
-            return Err(GameError::WouldNoop)
+            return Err(GameError::WouldNoop);
         }
         self.players[pid].purchase(IntelKind::Invisible)?;
         self.intel_reveal(pid, IntelKind::Invisible);
@@ -277,21 +325,17 @@ impl Game {
         Ok(())
     }
 
-
     /// Attempt to reveal the existence - of either anyone where you are, or a particular player!
-    pub fn reveal_action(
-        &mut self,
-        pid: PlayerId,
-        reveal: Option<PlayerId>,
-    ) -> GameResult {
+    pub fn reveal_action(&mut self, pid: PlayerId, reveal: Option<PlayerId>) -> GameResult {
         self.players[pid].purchase(IntelKind::Reveal)?;
         if let Some(reveal) = reveal {
             if !self.players[reveal].invisible {
-                self.note( pid,
+                self.note(
+                    pid,
                     Observation::Reveal {
                         who: reveal,
                         at: self.players[reveal].location,
-                    }
+                    },
                 );
             } else {
                 self.note(pid, Observation::RevealFailure { who: reveal });
@@ -301,13 +345,10 @@ impl Game {
             for reveal in &self.players {
                 if reveal.id != pid {
                     if !reveal.invisible && reveal.location == self.players[pid].location {
-
-                        reveals.push(
-                            Observation::Reveal {
-                                who: reveal.id,
-                                at: reveal.location,
-                            }
-                        );
+                        reveals.push(Observation::Reveal {
+                            who: reveal.id,
+                            at: reveal.location,
+                        });
                     } else {
                         reveals.push(Observation::RevealFailure { who: reveal.id });
                     }
@@ -357,6 +398,37 @@ pub enum Observation {
     },
 }
 
+impl Observation {
+    pub fn describe(&self) -> String {
+        match self {
+            Observation::Death { by, of } => format!("Player {} eliminated player {}", by, of),
+            Observation::Strike { by, at } => match (by, at) {
+                (Some(by), Some(at)) => format!("Player {} struck location {}", by, at.index()),
+                (Some(by), None) => format!("Player {} launched a covert strike", by),
+                (None, _) => "A mysterious strike occurred".to_string(),
+            },
+            Observation::WaitMove { by } => match by {
+                Some(pid) => format!("Player {} waited", pid),
+                None => "An unknown player waited".to_string(),
+            },
+            Observation::Capture { by, at } => {
+                format!("Player {} captured location {}", by, at.index())
+            }
+            Observation::Intel { by, kind } => match (by, kind) {
+                (Some(pid), Some(kind)) => format!("Player {} spent intel on {:?}", pid, kind),
+                (Some(pid), None) => format!("Player {} spent intel", pid),
+                (None, _) => "Intel activity detected".to_string(),
+            },
+            Observation::Reveal { who, at } => {
+                format!("Player {} was revealed at {}", who, at.index())
+            }
+            Observation::RevealFailure { who } => {
+                format!("Attempted reveal on player {} failed", who)
+            }
+        }
+    }
+}
+
 /// An Event records the observations that occur between successive game states.
 ///
 /// These are used by the server to inform players about the new state of the game,
@@ -399,5 +471,12 @@ impl IntelKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A player's action for a turn.
 pub enum Action {
-    Strike, Wait, Capture, HideSignals, Invisible, Prepare, Move(NodeIndex), Reveal(PlayerId),
+    Strike,
+    Wait,
+    Capture,
+    HideSignals,
+    Invisible,
+    Prepare,
+    Move(NodeIndex),
+    Reveal(PlayerId),
 }

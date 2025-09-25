@@ -1,1 +1,5 @@
 /target
+wasm-app/pkg
+wasm-app/target
+dist
+pkg
