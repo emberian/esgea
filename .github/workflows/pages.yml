@@ -25,10 +25,12 @@ jobs:
           profile: minimal
           toolchain: stable
           target: wasm32-unknown-unknown
+
       - name: Install wasm-pack
-        run: cargo install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
       - name: Build WebAssembly package
-        run: wasm-pack build wasm-app --target web --out-dir dist/pkg
+        run: RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack build wasm-app --target web --out-dir dist/pkg
       - name: Copy static assets
         run: |
           mkdir -p dist
