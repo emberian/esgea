@@ -399,6 +399,7 @@ impl DemoApp {
 impl NetworkState {
     async fn create(app: Weak<RefCell<DemoApp>>) -> Result<Rc<RefCell<Self>>, JsValue> {
         let endpoint = Endpoint::builder()
+            .discovery_n0()
             .alpns(vec![ALPN.to_vec()])
             .bind()
             .await
